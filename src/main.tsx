@@ -1,3 +1,4 @@
+import { initializeAppearance } from "@/lib/utils/appearance";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { platform } from "@tauri-apps/plugin-os";
@@ -16,6 +17,7 @@ document.documentElement.dataset.platform = platform();
 
 // Apply the last-known theme synchronously before render to avoid a flash of
 // the wrong palette, then reconcile with the persisted setting once it loads.
+initializeAppearance();
 applyTheme(getStoredTheme());
 syncThemeFromSettings();
 
