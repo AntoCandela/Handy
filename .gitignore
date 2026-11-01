@@ -45,3 +45,20 @@ result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Personal development data and credentials (never publish)
+/.handy-dev.local/
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+/recordings/
+/transcripts/
+/huggingface/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
