@@ -4,6 +4,10 @@ import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import type { OverlayPosition, OverlayStyle } from "@/bindings";
+import { invoke } from "@tauri-apps/api/core";
+import { useOsType } from "@/hooks/useOsType";
+import { Button } from "../ui/Button";
+import { toast } from "sonner";
 
 interface ShowOverlayProps {
   descriptionMode?: "inline" | "tooltip";
@@ -13,6 +17,7 @@ interface ShowOverlayProps {
 export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
+    const canAdjust = useOsType() === "windows";
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const styleOptions = [
@@ -81,6 +86,26 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
               }
               disabled={isUpdating("overlay_position")}
             />
+          </SettingContainer>
+        )}
+        {canAdjust && selectedStyle !== "none" && (
+          <SettingContainer
+            title={t("overlay.layoutTitle")}
+            description={t("overlay.layoutDescription")}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void invoke("reset_overlay_layout").catch(() =>
+                  toast.error(t("overlay.resetFailed")),
+                );
+              }}
+            >
+              {t("overlay.reset")}
+            </Button>
           </SettingContainer>
         )}
       </>
