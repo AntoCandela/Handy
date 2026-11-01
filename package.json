@@ -4,6 +4,8 @@
   "version": "0.9.8",
   "type": "module",
   "scripts": {
+    "dev:local": "bun scripts/dev-local.ts",
+    "start:local": "bun scripts/dev-local.ts --run-built",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
