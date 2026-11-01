@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
+import { languageName, languageList } from "@/lib/constants/languages";
+import { formatModelSize } from "@/lib/utils/format";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useModelStore } from "@/stores/modelStore";
 import {
@@ -48,11 +50,31 @@ interface ModelsSettingsProps {
 export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
   onChangeLanguages,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const loading = useModelStore((s) => s.loading);
+  const currentModel = useModelStore((s) => s.currentModel);
   const { facts, lists } = useModelEntries();
-  const { filters, setFilters, searching, matches } = useModelFilters();
+  const {
+    filters,
+    setFilters,
+    searching: tableSearching,
+    matches,
+  } = useModelFilters();
   const [more, setMore] = useState(false);
+  const [installedOnly, setInstalledOnly] = useState(false);
+  const [language, setLanguage] = useState("");
+  const searching = tableSearching || installedOnly || !!language;
+  const selected = lists.yours.find((entry) => entry.id === currentModel);
+  const allEntries = Object.values(lists).flat();
+  const languages = [
+    ...new Set(allEntries.flatMap((entry) => entry.languages)),
+  ].sort((a, b) =>
+    languageName(a, i18n.language).localeCompare(
+      languageName(b, i18n.language),
+      i18n.language,
+    ),
+  );
+  const installed = new Set(lists.yours.map((entry) => entry.id));
 
   if (loading) {
     return (
@@ -64,7 +86,13 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
     );
   }
 
-  const keep = (xs: typeof lists.yours) => xs.filter(matches);
+  const keep = (xs: typeof lists.yours) =>
+    xs.filter(
+      (entry) =>
+        matches(entry) &&
+        (!installedOnly || installed.has(entry.id)) &&
+        (!language || entry.languages.includes(language)),
+    );
   const moreButton = !searching && lists.yours.length > YOURS_LIMIT && (
     <button
       type="button"
@@ -103,7 +131,7 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
         {
           key: "untested",
           label: t("settings.models.sections.untested"),
-          rows: filters.query.trim() ? keep(lists.untested) : [],
+          rows: keep(lists.untested),
           note: t("settings.models.untestedNote"),
         },
       ]
@@ -148,6 +176,90 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
             className="shrink-0 cursor-pointer text-sm text-text underline decoration-line-strong underline-offset-[3px] hover:decoration-text focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary"
           >
             {t("settings.models.changeLanguages")}
+          </button>
+        )}
+      </div>
+      {selected && (
+        <section
+          aria-label={t("settings.models.selectedCard")}
+          className="mb-4 flex-none rounded-xl border border-logo-primary/30 bg-logo-primary/10 p-4"
+        >
+          <p className="text-xs font-semibold text-logo-primary">
+            {t("settings.models.selectedCard")}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">{selected.name}</h2>
+            <span className="rounded-full bg-background px-3 py-1 text-xs font-medium">
+              {t(
+                selected.streaming
+                  ? "settings.models.liveText"
+                  : "settings.models.afterRecording",
+              )}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-ink-2">
+            {t(
+              selected.streaming
+                ? "settings.models.liveTextDescription"
+                : "settings.models.afterRecordingDescription",
+            )}
+          </p>
+          <details className="mt-2 text-xs text-ink-2">
+            <summary className="cursor-pointer hover:text-text">
+              {t("settings.models.languageDetails", {
+                count: selected.languages.length,
+                size: formatModelSize(selected.sizeMb),
+              })}
+            </summary>
+            <p className="mt-2 max-h-20 overflow-y-auto leading-relaxed">
+              {selected.languages.length
+                ? languageList(selected.languages, i18n.language)
+                : t("settings.models.languagesUnknown")}
+            </p>
+          </details>
+        </section>
+      )}
+      <div className="mb-3 flex flex-none flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-pressed={!installedOnly}
+          onClick={() => setInstalledOnly(false)}
+          className={`rounded-full border px-3 py-1.5 text-xs ${!installedOnly ? "border-logo-primary/40 bg-logo-primary/10 text-text" : "border-line text-ink-2"}`}
+        >
+          {t("settings.models.browseAll")}
+        </button>
+        <button
+          type="button"
+          aria-pressed={installedOnly}
+          onClick={() => setInstalledOnly(true)}
+          className={`rounded-full border px-3 py-1.5 text-xs ${installedOnly ? "border-logo-primary/40 bg-logo-primary/10 text-text" : "border-line text-ink-2"}`}
+        >
+          {t("settings.models.installedCount", { count: lists.yours.length })}
+        </button>
+        <select
+          aria-label={t("settings.models.filterLanguage")}
+          value={language}
+          onChange={(event) => setLanguage(event.target.value)}
+          className="max-w-48 rounded-full border border-line bg-background px-3 py-1.5 text-xs"
+        >
+          <option value="">{t("settings.models.allLanguagesFilter")}</option>
+          {languages.map((code) => (
+            <option key={code} value={code}>
+              {languageName(code, i18n.language)}
+            </option>
+          ))}
+        </select>
+        {searching && (
+          <button
+            type="button"
+            className="px-2 text-xs text-ink-2 underline"
+            onClick={() => {
+              setInstalledOnly(false);
+              setLanguage("");
+              setFilters({ query: "", preview: false, translate: false });
+            }}
+          >
+            {t("settings.models.clearFilters")}
           </button>
         )}
       </div>

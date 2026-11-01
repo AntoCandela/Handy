@@ -1,4 +1,6 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/Button";
 
 type ModelStatus =
   | "ready"
@@ -27,6 +29,7 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
   onClick,
   className = "",
 }) => {
+  const { t } = useTranslation();
   const getStatusColor = (status: ModelStatus): string => {
     switch (status) {
       case "ready":
@@ -51,13 +54,17 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
   };
 
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
+      type="button"
+      aria-expanded={isDropdownOpen}
       onClick={onClick}
       className={`flex items-center gap-2 hover:text-text transition-colors ${className}`}
-      title={`Model status: ${displayText}`}
+      title={t("modelSelector.switchModel", { model: displayText })}
     >
       <div className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
-      <span className="max-w-28 truncate">{displayText}</span>
+      <span className="max-w-44 truncate text-start">{displayText}</span>
       <svg
         className={`w-3 h-3 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
         fill="none"
@@ -71,7 +78,7 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
           d="M19 9l-7 7-7-7"
         />
       </svg>
-    </button>
+    </Button>
   );
 };
 
