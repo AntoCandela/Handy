@@ -3,13 +3,13 @@ import { useTranslation } from "react-i18next";
 import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
 import HandyTextLogo from "./icons/HandyTextLogo";
 import HandyHand from "./icons/HandyHand";
+import { WritingProfiles } from "./settings/WritingProfiles";
 import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
   AboutSettings,
-  PostProcessingSettings,
   ModelsSettings,
 } from "./settings";
 
@@ -57,9 +57,9 @@ export const SECTIONS_CONFIG = {
     enabled: () => true,
   },
   postprocessing: {
-    labelKey: "sidebar.postProcessing",
+    labelKey: "writingProfiles.title",
     icon: Sparkles,
-    component: PostProcessingSettings,
+    component: WritingProfiles,
     enabled: (settings) => settings?.post_process_enabled ?? false,
   },
   debug: {
