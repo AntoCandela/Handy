@@ -7,7 +7,9 @@
     "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel",
-    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
+    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input",
+    "history": "Transcription History...",
+    "manageModels": "Manage Models..."
   },
   "sidebar": {
     "general": "General",
@@ -318,7 +320,9 @@
     "modelUnloaded": "Model Unloaded",
     "noModelDownloadRequired": "No Model - Download Required",
     "downloadSpeed": "{{speed}} MB/s",
-    "lockedWhileTranscribing": "You can switch models once History finishes transcribing."
+    "lockedWhileTranscribing": "You can switch models once History finishes transcribing.",
+    "selected": "Selected",
+    "switchModel": "Switch model: {{model}}"
   },
   "settings": {
     "modelSettings": {
@@ -420,7 +424,23 @@
       "rescan": {
         "label": "Rescan",
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
-      }
+      },
+      "selectedCard": "Currently selected",
+      "liveText": "Live text",
+      "afterRecording": "Text after recording",
+      "liveTextDescription": "See your words as you speak and correct them in the recording overlay.",
+      "afterRecordingDescription": "Your transcript appears after you stop recording.",
+      "languageDetails": "Languages: {{count}} · Model file: {{size}}",
+      "languagesUnknown": "Language information is unavailable.",
+      "browseAll": "All models",
+      "installedCount": "Installed ({{count}})",
+      "filterLanguage": "Filter models by language",
+      "allLanguagesFilter": "All languages",
+      "clearFilters": "Clear filters",
+      "moreActions": "More actions for {{name}}",
+      "downloadAndUse": "Download & use",
+      "useModel": "Use model",
+      "selectedLabel": "Selected"
     },
     "languages": {
       "title": "Languages"
@@ -695,7 +715,41 @@
       "showMore": "Show more",
       "showLess": "Show less",
       "dropTitle": "Drop to transcribe",
-      "dropDescription": "It'll show up in History."
+      "dropDescription": "It'll show up in History.",
+      "searchPlaceholder": "Search all transcripts?",
+      "allRecordings": "All recordings",
+      "savedRecordings": "Saved",
+      "dateFilter": "Filter by date",
+      "allDates": "All dates",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "lastWeek": "Last 7 days",
+      "lastMonth": "Last 30 days",
+      "noMatches": "No recordings match your search or filters.",
+      "loadError": "Could not load history. Your recordings have not been changed.",
+      "tryAgain": "Try again",
+      "loadMore": "Load more recordings",
+      "durationUnknown": "Duration unavailable",
+      "corrected": "Final version",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyOriginal": "Copy original transcription",
+      "emptyTranscript": "This transcript was cleared.",
+      "openTranscript": "Open transcript & audio",
+      "closeTranscript": "Collapse",
+      "moreActions": "More actions",
+      "viewOriginal": "View original transcription",
+      "viewFinal": "View final text",
+      "saveError": "Could not update the saved recording.",
+      "folderError": "Could not open the recordings folder.",
+      "confirmDelete": "Delete this transcript and its recording? This cannot be undone.",
+      "confirmRetry": "Transcribe this recording again with the current model? This replaces its current transcript.",
+      "confirmRetryCorrected": "Transcribe this recording again? Your saved edits and earlier original recognition results will be preserved.",
+      "playAudio": "Play recording",
+      "pauseAudio": "Pause recording",
+      "seekAudio": "Seek within recording",
+      "unknownTime": "--:--",
+      "audioUnavailable": "Audio could not be played. Check that the recording is still available."
     },
     "debug": {
       "title": "Debug",
@@ -875,7 +929,46 @@
           "description": "High-performance tensor library for on-device machine learning inference",
           "details": "Handy's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
+      },
+      "refresh": {
+        "appName": "Handy",
+        "appDetails": "Application details",
+        "tagline": "Speech-to-text, on your computer.",
+        "loadingVersion": "Loading version...",
+        "versionLabel": "Version {{version}}",
+        "versionUnavailable": "Version unavailable",
+        "preferences": "Make it yours",
+        "preferencesDescription": "Choose your interface language, appearance, and release-note preferences.",
+        "projectLinks": "Project & support",
+        "storage": "Files & diagnostics",
+        "storageDescription": "Open local app data and logs for maintenance or troubleshooting.",
+        "creditsDescription": "Built with the work of the open-source community.",
+        "linkError": "Could not open the link. Please try again."
       }
+    },
+    "refresh": {
+      "generalIntro": "Set up how you record, which languages you speak, and what you hear.",
+      "shortcuts": "Recording shortcuts",
+      "shortcutsDescription": "Choose how to start, stop, and cancel a recording.",
+      "languagesDescription": "Help Handy recommend models that cover the languages you speak.",
+      "microphone": "Microphone & recording",
+      "microphoneDescription": "Choose your input device and how audio behaves while you record.",
+      "feedback": "Feedback sounds",
+      "feedbackDescription": "Control the sounds Handy plays when recording starts and stops.",
+      "feedbackOff": "Turn on Audio Feedback to adjust its output device and volume.",
+      "modelDescription": "Language and translation options supported by your selected model.",
+      "advancedTitle": "Advanced",
+      "advancedIntro": "Fine-tune the recording overlay, text delivery, and application behavior.",
+      "startup": "Startup & tray",
+      "startupDescription": "Choose how Handy opens and where it stays available.",
+      "overlay": "Recording overlay",
+      "overlayDescription": "Choose the recording display, its starting position, or reset your saved layout.",
+      "performance": "Model memory",
+      "performanceDescription": "Choose how long an idle model stays loaded. Unloading frees memory; the next recording may take longer to start.",
+      "outputDescription": "Control how finished text reaches the app you are using.",
+      "transcriptionDescription": "Adjust speech detection, text cleanup, and your personal vocabulary.",
+      "historyDescription": "Choose how much transcription history and recorded audio to keep.",
+      "experimentalDescription": "Enable additional controls for processing and troubleshooting."
     }
   },
   "footer": {
@@ -937,9 +1030,19 @@
     }
   },
   "overlay": {
+    "editorText": "Live transcript. Click to edit while recording continues.",
+    "editorPaste": "Paste",
+    "editorPasteFailed": "Could not paste into the original window. Your draft is still here; try again or copy it manually.",
+    "move": "Drag to move the overlay",
+    "resize": "Drag to resize the overlay",
+    "layoutTitle": "Overlay layout",
+    "layoutDescription": "Drag the control bar to move the overlay. Drag an edge or corner to resize it. Compact and live overlays remember separate layouts; choosing Top or Bottom restores both defaults.",
+    "reset": "Reset overlay",
+    "resetFailed": "Could not reset the overlay layout.",
     "transcribing": "Transcribing...",
     "processing": "Processing...",
-    "loadingModel": "Loading model..."
+    "loadingModel": "Loading model...",
+    "editorMergeFailed": "The transcript changed too much to merge safely. Your corrections are preserved here; copy this draft before cancelling."
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -951,5 +1054,83 @@
     "learnMore": "How to fix",
     "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
     "dismiss": "Dismiss"
+  },
+  "recordingExperience": {
+    "listening": "Listening",
+    "starting": "Starting microphone",
+    "defaultMicrophone": "System microphone",
+    "openHistory": "Open History",
+    "recoveryHint": "Open History to look for the saved recording and retry transcription."
+  },
+  "workspace": {
+    "title": "Edit transcript",
+    "name": "Title",
+    "transcript": "Your transcript",
+    "preserved": "Your edits are saved separately and kept when you retranscribe. Saving also marks this recording as Saved.",
+    "save": "Save changes",
+    "export": "Export text",
+    "saved": "Changes saved.",
+    "error": "Could not load or save these changes. Keep your text, then reopen the entry and try again.",
+    "suggestion": "You have corrected \"{{word}}\" more than once. Add it to your vocabulary?",
+    "approve": "Add to vocabulary",
+    "dismiss": "Not now",
+    "originals": "Original recognition results",
+    "close": "Close editor",
+    "discard": "Discard unsaved changes",
+    "conflict": "This recovered draft is older than the saved version. Copy or export it before discarding it to load the saved text."
+  },
+  "writingProfiles": {
+    "title": "Writing profiles",
+    "description": "Choose how Handy handles recognized text. This local-only profile applies to dictation and retranscription, including the post-processing shortcut.",
+    "dictation": "Dictation",
+    "cleanup": "Clean up wording",
+    "english": "Translate to English",
+    "model": "Local Ollama model",
+    "localHint": "Cleanup and translation use an installed local Ollama GGUF text model. Cloud models are rejected. No downloads happen automatically. Transcripts over 4,000 UTF-8 bytes keep their original wording. The first request can take longer while the model loads; originals remain in History.",
+    "apply": "Apply profile",
+    "saved": "Profile saved. Apply changes between recordings.",
+    "error": "Could not load or save the profile. Finish recording before changing profiles.",
+    "failed": "Local writing could not finish",
+    "fallback": "Handy kept the original transcript. Check that Ollama is running with an installed local model. Very long transcripts keep their original wording.",
+    "check": "Check model",
+    "ready": "Local model found. Ready for cleanup and translation.",
+    "unavailable": "Local model unavailable. Start Ollama and check that this GGUF text model is installed."
+  },
+  "appearance": {
+    "title": "Appearance",
+    "description": "Choose a style for Handy and its recording overlay. Text size stays independent of your theme.",
+    "presets": {
+      "classic": "Classic",
+      "slate": "Slate",
+      "forest": "Forest",
+      "contrast": "High Contrast",
+      "paper": "Paper",
+      "dusk": "Dusk"
+    },
+    "accent": "Accent color",
+    "accents": {
+      "preset": "Theme default",
+      "pink": "Pink",
+      "blue": "Blue",
+      "green": "Green",
+      "amber": "Amber"
+    },
+    "textSize": "Text size",
+    "sizes": {
+      "normal": "Normal",
+      "large": "Large"
+    },
+    "reset": "Reset style and text size",
+    "error": "Could not save or synchronize appearance. Try again.",
+    "descriptions": {
+      "classic": "Familiar neutrals and pink",
+      "slate": "Cool blue and slate",
+      "forest": "Quiet greens and warm neutrals",
+      "contrast": "Clear edges and strong contrast",
+      "paper": "Warm cream and earthy brown",
+      "dusk": "Soft violet and lavender"
+    },
+    "accentDescription": "Choose the highlight color for controls and the recording overlay.",
+    "sizeDescription": "Keep your preferred text size when switching styles."
   }
 }

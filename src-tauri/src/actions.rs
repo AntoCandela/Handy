@@ -412,27 +412,44 @@ pub(crate) async fn process_transcription_output(
     transcription: &str,
     post_process: bool,
 ) -> ProcessedTranscription {
-    let settings = get_settings(app);
+    let _ = post_process; // Legacy shortcut uses the selected local profile too.
+    process_with_writing_profile(
+        app,
+        transcription,
+        crate::writing_profiles::get_writing_profile(app.clone()),
+    )
+    .await
+}
+
+async fn process_with_writing_profile(
+    app: &AppHandle,
+    transcription: &str,
+    profile: Result<crate::writing_profiles::WritingProfile, String>,
+) -> ProcessedTranscription {
     let mut final_text = transcription.to_string();
-    let mut post_processed_text: Option<String> = None;
-    let mut post_process_prompt: Option<String> = None;
-
-    if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
-            post_processed_text = Some(processed_text.clone());
-            final_text = processed_text;
-
-            if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                if let Some(prompt) = settings
-                    .post_process_prompts
-                    .iter()
-                    .find(|prompt| &prompt.id == prompt_id)
-                {
-                    post_process_prompt = Some(prompt.prompt.clone());
+    let mut post_processed_text = None;
+    let mut post_process_prompt = None;
+    match profile {
+        Ok(profile) if profile.mode != "dictation" => {
+            match crate::writing_profiles::process(&profile, transcription).await {
+                Ok(text) => {
+                    final_text = text.clone();
+                    post_processed_text = Some(text);
+                    post_process_prompt = Some(format!("Local writing profile: {}", profile.mode));
+                }
+                Err(error) => {
+                    warn!("Local writing profile failed: {}", error);
+                    let _ = app.emit("local-writing-error", ());
                 }
             }
         }
+        Err(error) => {
+            warn!("Could not read writing profile: {}", error);
+            let _ = app.emit("local-writing-error", ());
+        }
+        _ => {}
     }
+    // Profiles are local-only. The original transcript is retained on failure.
 
     ProcessedTranscription {
         final_text,
@@ -475,7 +492,9 @@ impl ShortcutAction for TranscribeAction {
         }
 
         let binding_id = binding_id.to_string();
-        RECORDING_SESSION.fetch_add(1, Ordering::SeqCst);
+        let _recording_session = RECORDING_SESSION.fetch_add(1, Ordering::SeqCst) + 1;
+        #[cfg(target_os = "windows")]
+        crate::overlay::editor::start(_recording_session);
         let tray_started = Instant::now();
         set_tray_state(app, TrayIconState::Recording);
         let tray_elapsed = tray_started.elapsed();
@@ -658,8 +677,15 @@ impl ShortcutAction for TranscribeAction {
         play_feedback_sound(app, SoundType::Stop);
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
-        let post_process = self.post_process;
+        let writing_profile = crate::writing_profiles::get_writing_profile(app.clone());
+        let post_process = self.post_process
+            || writing_profile
+                .as_ref()
+                .map(|p| p.mode != "dictation")
+                .unwrap_or(false);
         let cancel_generation = rm.cancel_generation();
+        #[cfg(target_os = "windows")]
+        let recording_session = RECORDING_SESSION.load(Ordering::SeqCst);
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
@@ -752,15 +778,19 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
-                            if post_process {
+                            if writing_profile
+                                .as_ref()
+                                .map(|p| p.mode != "dictation")
+                                .unwrap_or(false)
+                            {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
                                 } else {
                                     show_processing_overlay(&ah);
                                 }
                             }
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                            let Some(mut processed) = complete_unless_cancelled(
+                                process_with_writing_profile(&ah, &transcription, writing_profile),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -778,6 +808,34 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            #[cfg(target_os = "windows")]
+                            let edited = if use_streaming_overlay {
+                                match crate::overlay::editor::review(
+                                    &ah,
+                                    recording_session,
+                                    &transcription,
+                                    &processed.final_text,
+                                )
+                                .await
+                                {
+                                    crate::overlay::editor::ReviewOutcome::Unchanged => false,
+                                    crate::overlay::editor::ReviewOutcome::Applied(text) => {
+                                        processed.final_text = text.clone();
+                                        processed.post_processed_text = Some(text);
+                                        true
+                                    }
+                                    crate::overlay::editor::ReviewOutcome::Cancelled => {
+                                        utils::hide_recording_overlay(&ah);
+                                        set_tray_state(&ah, TrayIconState::Idle);
+                                        return;
+                                    }
+                                }
+                            } else {
+                                false
+                            };
+                            #[cfg(not(target_os = "windows"))]
+                            let edited = false;
+
                             // Save to history if WAV was saved
                             if wav_saved {
                                 if let Err(err) = hm.save_entry(
@@ -791,7 +849,20 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
-                            if processed.final_text.is_empty() {
+                            if edited {
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                emit_transcription_complete(
+                                    &ah,
+                                    if processed.final_text.is_empty() {
+                                        TranscriptionOutcome::Empty
+                                    } else {
+                                        TranscriptionOutcome::Typed
+                                    },
+                                    sample_count,
+                                    stop_time,
+                                );
+                            } else if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 emit_transcription_complete(

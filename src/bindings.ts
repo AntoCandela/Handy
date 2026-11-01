@@ -117,6 +117,36 @@ async changeOverlayPositionSetting(position: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Arm layout persistence immediately before a native overlay gesture.
+ */
+async beginOverlayAdjustment() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("begin_overlay_adjustment") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Restore the default overlay dimensions and its configured Top/Bottom position.
+ */
+async resetOverlayLayout() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_overlay_layout") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async submitOverlayEdit(id: string, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("submit_overlay_edit", { id, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_style_setting", { style }) };
@@ -906,6 +936,54 @@ async getHistoryEntries(cursor: number | null, limit: number | null) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
+async searchHistoryEntries(cursor: number | null, limit: number, query: string, savedOnly: boolean, since: number | null) : Promise<Result<HistorySearchPage, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_history_entries", { cursor, limit, query, savedOnly, since }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getTranscriptWorkspace(id: number) : Promise<Result<TranscriptWorkspace, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transcript_workspace", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWritingProfile() : Promise<Result<WritingProfile, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_writing_profile") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setWritingProfile(profile: WritingProfile) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_writing_profile", { profile }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async checkWritingModel(model: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_writing_model", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveTranscriptEdit(id: number, title: string, text: string, expected: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_transcript_edit", { id, title, text, expected }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async toggleHistoryEntrySaved(id: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("toggle_history_entry_saved", { id }) };
@@ -974,10 +1052,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1123,6 +1199,8 @@ export type HistoryEntry = { id: number; file_name: string; timestamp: number; s
  * dictation.
  */
 source_name: string | null }
+export type HistorySearchEntry = { entry: HistoryEntry; duration_seconds: number | null }
+export type HistorySearchPage = { entries: HistorySearchEntry[]; has_more: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation
@@ -1310,6 +1388,7 @@ export type StreamWorkKind = "transcribing" | "polishing"
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TranscriptWorkspace = { title: string; text: string; revision: number; originals: string[] }
 /**
  * Emitted when a dictation finishes (not on cancel); onboarding uses it to measure speed.
  */
@@ -1354,6 +1433,7 @@ export type TranscriptionOutcome =
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
+export type WritingProfile = { mode: string; model: string }
 
 /** tauri-specta globals **/
 

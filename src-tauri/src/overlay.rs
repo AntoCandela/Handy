@@ -5,6 +5,61 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
+#[cfg(target_os = "windows")]
+mod layout;
+
+#[cfg(target_os = "windows")]
+pub(crate) mod editor;
+
+#[tauri::command]
+#[specta::specta]
+pub async fn submit_overlay_edit(
+    window: tauri::WebviewWindow,
+    id: String,
+    text: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        editor::submit_overlay_edit(window, id, text).await
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, id, text);
+        Err("Overlay editing is currently available on Windows".into())
+    }
+}
+
+/// Arm layout persistence immediately before a native overlay gesture.
+#[tauri::command]
+#[specta::specta]
+pub fn begin_overlay_adjustment(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != "recording_overlay" {
+        return Err("Only the recording overlay can be adjusted".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if !window.is_visible().map_err(|e| e.to_string())? {
+            return Err("The recording overlay is not visible".into());
+        }
+        layout::begin();
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Overlay adjustment is currently available on Windows".into())
+    }
+}
+
+/// Restore the default overlay dimensions and its configured Top/Bottom position.
+#[tauri::command]
+#[specta::specta]
+pub fn reset_overlay_layout(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    layout::reset(&app)?;
+    update_overlay_position(&app);
+    Ok(())
+}
+
 #[cfg(not(target_os = "macos"))]
 use log::debug;
 
@@ -347,7 +402,7 @@ fn place_windows_overlay(
     let monitor = get_monitor_with_cursor(app_handle)
         .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
     let text_scale = windows_text_scale_factor();
-    let (x, y, width, height) = windows_overlay_bounds(
+    let default_bounds = windows_overlay_bounds(
         *monitor.position(),
         *monitor.size(),
         monitor.scale_factor(),
@@ -356,6 +411,8 @@ fn place_windows_overlay(
         logical_height,
         settings::get_settings(app_handle).overlay_position,
     );
+    let (x, y, width, height) =
+        layout::bounds(app_handle, logical_width, logical_height).unwrap_or(default_bounds);
     let hwnd = overlay_window
         .hwnd()
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
@@ -429,6 +486,8 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     #[allow(unused_variables)]
     match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "windows")]
+            layout::track(&window);
             #[cfg(target_os = "linux")]
             {
                 // Try to initialize GTK layer shell, ignore errors if compositor doesn't support it
@@ -514,6 +573,12 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
+        #[cfg(target_os = "windows")]
+        {
+            layout::prepare(&overlay_window, state == "streaming");
+            // Show without activating; enable keyboard focus only afterwards.
+            let _ = overlay_window.set_focusable(false);
+        }
 
         #[cfg(target_os = "linux")]
         let shown_with_layer_shell = if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
@@ -566,6 +631,8 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
             let show_started = std::time::Instant::now();
             let _ = overlay_window.show();
+            #[cfg(target_os = "windows")]
+            let _ = overlay_window.set_focusable(state == "streaming");
             let show_elapsed = show_started.elapsed();
 
             // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
@@ -687,9 +754,16 @@ static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    layout::stop();
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        #[cfg(target_os = "windows")]
+        {
+            editor::cancel();
+            let _ = overlay_window.set_focusable(false);
+        }
         // Snapshot before doing anything observable, so any show that lands
         // after this point invalidates the delayed hide below.
         let scheduled_at = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);

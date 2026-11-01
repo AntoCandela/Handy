@@ -27,6 +27,7 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod writing_profiles;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -283,8 +284,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     let tray = tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => {
+            "settings" | "open_history" | "open_models" | "open_about" => {
+                let section = match event.id.as_ref() {
+                    "open_history" => "history",
+                    "open_models" => "models",
+                    "open_about" => "about",
+                    _ => "general",
+                };
                 show_main_window(app);
+                if let Err(error) = app.emit_to("main", "tray-navigate", section) {
+                    log::warn!("Could not navigate from tray: {}", error);
+                }
             }
             "secure_input_warning" => {
                 // Full explanation lives in the settings-window banner
@@ -669,6 +679,9 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_selected_language_setting,
             shortcut::change_spoken_languages_setting,
             shortcut::change_overlay_position_setting,
+            overlay::begin_overlay_adjustment,
+            overlay::reset_overlay_layout,
+            overlay::submit_overlay_edit,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
@@ -770,6 +783,12 @@ pub fn run(cli_args: CliArgs) {
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
             commands::history::get_history_entries,
+            commands::history::search_history_entries,
+            commands::history::get_transcript_workspace,
+            writing_profiles::get_writing_profile,
+            writing_profiles::set_writing_profile,
+            writing_profiles::check_writing_model,
+            commands::history::save_transcript_edit,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
@@ -960,7 +979,7 @@ pub fn run(cli_args: CliArgs) {
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Handy")
+                    .title(app.config().product_name.as_deref().unwrap_or("Handy"))
                     .inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
                     .min_inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
                     .resizable(true)

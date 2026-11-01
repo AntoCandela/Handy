@@ -727,7 +727,7 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
     // Whether the overlay shows at all is owned by overlay_style now; position
     // only ever toggles Top/Bottom, so the enabled cache is untouched here.
     // Update overlay position without recreating window
-    crate::utils::update_overlay_position(&app);
+    crate::overlay::reset_overlay_layout(app.clone())?;
 
     Ok(())
 }

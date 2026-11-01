@@ -606,6 +606,10 @@ impl TranscriptionCoordinator {
                     let was_locked = state.is_recording_locked();
                     match cmd {
                         Command::Input(input) => {
+                            #[cfg(target_os = "windows")]
+                            if crate::overlay::editor::blocks_shortcuts() {
+                                continue;
+                            }
                             if let Some(effect) = state.on_input(input, Instant::now()) {
                                 run_effect(&app, &mut state, effect);
                             }
