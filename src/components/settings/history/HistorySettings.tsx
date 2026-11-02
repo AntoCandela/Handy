@@ -1,551 +1,608 @@
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { TranscriptWorkspace } from "./TranscriptWorkspace";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import {
-  Check,
-  Copy,
-  FileAudio,
-  FilePlus,
-  FolderOpen,
-  RotateCcw,
-  Star,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, Copy, FilePlus, FolderOpen, Star, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import {
-  commands,
-  events,
-  type HistoryEntry,
-  type HistoryUpdatePayload,
-} from "@/bindings";
+import { commands, events, type HistoryEntry } from "@/bindings";
 import { useOsType } from "@/hooks/useOsType";
 import {
   useTranscriptionJobsStore,
   type ActiveJobStatus,
 } from "@/stores/transcriptionJobsStore";
-import { formatDateTime } from "@/utils/dateFormat";
+import { formatDate, formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { Input } from "../../ui/Input";
 import { copyToClipboard } from "./clipboard";
 import { pickAndTranscribeFiles } from "./transcribeFiles";
+import {
+  dayKey,
+  durationLabel,
+  finalTranscript,
+  rangeStart,
+  type HistoryRange,
+  type HistoryRow,
+} from "./historyView";
 
-const IconButton: React.FC<{
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-  active?: boolean;
-  children: React.ReactNode;
-}> = ({ onClick, title, disabled, active, children }) => (
-  <button
-    onClick={onClick}
-    disabled={disabled}
-    className={`p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed disabled:text-text/20 ${
-      active
-        ? "text-logo-primary hover:text-logo-primary"
-        : "text-ink-3 hover:text-logo-primary"
-    }`}
-    title={title}
-  >
-    {children}
-  </button>
-);
-
+interface SearchPage {
+  entries: { entry: HistoryEntry; duration_seconds: number | null }[];
+  has_more: boolean;
+}
 const PAGE_SIZE = 30;
 
-// Long text folds to this many lines until "Show more".
-const FOLDED_LINES = 4;
-
-interface HeaderButtonProps {
-  onClick: () => void;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const HeaderButton: React.FC<HeaderButtonProps> = ({
-  onClick,
-  label,
-  icon: Icon,
-}) => (
-  <Button
-    onClick={onClick}
-    variant="secondary"
-    size="sm"
-    className="flex items-center gap-2"
-    title={label}
-  >
-    <Icon className="w-4 h-4" />
-    <span>{label}</span>
-  </Button>
-);
-
 export const HistorySettings: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const osType = useOsType();
   const jobs = useTranscriptionJobsStore((state) => state.jobs);
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [entries, setEntries] = useState<HistoryRow[]>([]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [range, setRange] = useState<HistoryRange>("all");
   const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const entriesRef = useRef<HistoryEntry[]>([]);
-  const loadingRef = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const generation = useRef(0);
+  const busy = useRef(false);
+  const reload = useCallback(() => setRefresh((value) => value + 1), []);
 
-  // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
-    entriesRef.current = entries;
-  }, [entries]);
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const loadPage = useCallback(async (cursor?: number) => {
-    const isFirstPage = cursor === undefined;
-    if (!isFirstPage && loadingRef.current) return;
-    loadingRef.current = true;
-
-    if (isFirstPage) setLoading(true);
-
-    try {
-      const result = await commands.getHistoryEntries(
-        cursor ?? null,
-        PAGE_SIZE,
-      );
-      if (result.status === "ok") {
-        const { entries: newEntries, has_more } = result.data;
-        setEntries((prev) => {
-          if (isFirstPage) return newEntries;
-          const existingIds = new Set(prev.map((entry) => entry.id));
-          return [
-            ...prev,
-            ...newEntries.filter((entry) => !existingIds.has(entry.id)),
-          ];
+  const loadPage = useCallback(
+    async (cursor: number | null = null) => {
+      if (cursor !== null && busy.current) return;
+      if (cursor === null) {
+        generation.current++;
+        setLoading(true);
+        setEntries([]);
+      } else setLoadingMore(true);
+      const request = generation.current;
+      busy.current = true;
+      setError(false);
+      try {
+        const page = await invoke<SearchPage>("search_history_entries", {
+          cursor,
+          limit: PAGE_SIZE,
+          query,
+          savedOnly,
+          since: rangeStart(range),
         });
-        setHasMore(has_more);
-      }
-    } catch (error) {
-      console.error("Failed to load history entries:", error);
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    loadPage();
-  }, [loadPage]);
-
-  // Infinite scroll via IntersectionObserver
-  useEffect(() => {
-    if (loading) return;
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore) return;
-
-    const observer = new IntersectionObserver(
-      (observerEntries) => {
-        const first = observerEntries[0];
-        if (first.isIntersecting) {
-          const lastEntry = entriesRef.current[entriesRef.current.length - 1];
-          if (lastEntry) {
-            loadPage(lastEntry.id);
-          }
+        if (request !== generation.current) return;
+        const rows = page.entries.map(({ entry, duration_seconds }) => ({
+          ...entry,
+          duration_seconds,
+        }));
+        setEntries((previous) =>
+          cursor === null
+            ? rows
+            : [
+                ...previous,
+                ...rows.filter(
+                  (row) => !previous.some((existing) => existing.id === row.id),
+                ),
+              ],
+        );
+        setHasMore(page.has_more);
+      } catch (failure) {
+        if (request !== generation.current) return;
+        console.error("Failed to search history", failure);
+        setError(true);
+      } finally {
+        if (request === generation.current) {
+          busy.current = false;
+          setLoading(false);
+          setLoadingMore(false);
         }
-      },
-      { threshold: 0 },
-    );
+      }
+    },
+    [query, savedOnly, range],
+  );
 
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loading, hasMore, loadPage]);
-
-  // Listen for new entries added from the transcription pipeline
   useEffect(() => {
-    const unlisten = events.historyUpdatePayload.listen((event) => {
-      const payload: HistoryUpdatePayload = event.payload;
-      if (payload.action === "added") {
-        setEntries((prev) => [
-          payload.entry,
-          ...prev.filter((entry) => entry.id !== payload.entry.id),
-        ]);
-      } else if (payload.action === "updated") {
-        setEntries((prev) =>
-          prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),
-        );
-      }
-      // "deleted" and "toggled" are handled by optimistic updates only,
-      // so we intentionally ignore them here to avoid double-mutation.
-    });
-
+    void loadPage();
     return () => {
-      unlisten.then((fn) => fn());
+      generation.current++;
+      busy.current = false;
     };
-  }, []);
+  }, [loadPage, refresh]);
 
-  const toggleSaved = async (id: number) => {
-    // Optimistic update
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-    );
-    try {
-      const result = await commands.toggleHistoryEntrySaved(id);
-      if (result.status !== "ok") {
-        // Revert on failure
-        setEntries((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-        );
-      }
-    } catch (error) {
-      console.error("Failed to toggle saved status:", error);
-      // Revert on failure
-      setEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-      );
-    }
-  };
+  useEffect(() => {
+    const unlisten = events.historyUpdatePayload.listen(reload);
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [reload]);
 
   const getAudioUrl = useCallback(
     async (fileName: string) => {
-      try {
-        const result = await commands.getAudioFilePath(fileName);
-        if (result.status === "ok") {
-          if (osType === "linux") {
-            const fileData = await readFile(result.data);
-            const blob = new Blob([fileData], { type: "audio/wav" });
-            return URL.createObjectURL(blob);
-          }
-          return convertFileSrc(result.data, "asset");
-        }
-        return null;
-      } catch (error) {
-        console.error("Failed to get audio file path:", error);
-        return null;
+      const result = await commands.getAudioFilePath(fileName);
+      if (result.status !== "ok") throw new Error(String(result.error));
+      if (osType === "linux") {
+        const data = await readFile(result.data);
+        return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
       }
+      return convertFileSrc(result.data, "asset");
     },
     [osType],
   );
 
-  const deleteAudioEntry = async (id: number) => {
-    // Optimistically remove
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-    try {
-      const result = await commands.deleteHistoryEntry(id);
-      if (result.status !== "ok") {
-        // Reload on failure
-        loadPage();
-      }
-    } catch (error) {
-      console.error("Failed to delete entry:", error);
-      loadPage();
-    }
+  const groupLabel = (timestamp: number) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const key = dayKey(timestamp);
+    if (key === dayKey(today.getTime() / 1000))
+      return t("settings.history.today");
+    if (key === dayKey(yesterday.getTime() / 1000))
+      return t("settings.history.yesterday");
+    return formatDate(String(timestamp), i18n.language);
   };
-
-  const transcribeFile = async () => {
-    try {
-      await pickAndTranscribeFiles();
-    } catch (error) {
-      console.error("Failed to pick a file to transcribe:", error);
-      toast.error(t("settings.history.transcribeFailed"));
-    }
-  };
-
-  const openRecordingsFolder = async () => {
-    try {
-      const result = await commands.openRecordingsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
-    } catch (error) {
-      console.error("Failed to open recordings folder:", error);
-    }
-  };
-
-  let content: React.ReactNode;
-
-  if (loading) {
-    content = (
-      <div className="px-4 py-3 text-center text-ink-2">
-        {t("settings.history.loading")}
-      </div>
-    );
-  } else if (entries.length === 0) {
-    content = (
-      <div className="px-4 py-3 text-center text-ink-2">
-        {t("settings.history.empty")}
-      </div>
-    );
-  } else {
-    content = (
-      <>
-        <AudioPlayerGroup>
-          <div className="divide-y divide-line">
-            {entries.map((entry) => (
-              <HistoryEntryComponent
-                key={entry.id}
-                entry={entry}
-                job={jobs[entry.id]}
-                onToggleSaved={() => toggleSaved(entry.id)}
-                onCopyText={() => copyToClipboard(entry.transcription_text)}
-                getAudioUrl={getAudioUrl}
-                deleteAudio={deleteAudioEntry}
-                retryTranscription={commands.retryHistoryEntryTranscription}
-                cancelTranscription={commands.cancelHistoryEntryTranscription}
-              />
-            ))}
-          </div>
-        </AudioPlayerGroup>
-        {/* Sentinel for infinite scroll */}
-        <div ref={sentinelRef} className="h-1" />
-      </>
-    );
-  }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-medium text-ink-3 uppercase tracking-wide">
-              {t("settings.history.title")}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <HeaderButton
-              onClick={transcribeFile}
-              label={t("settings.history.transcribeFile")}
-              icon={FilePlus}
-            />
-            <HeaderButton
-              onClick={openRecordingsFolder}
-              label={t("settings.history.openFolder")}
-              icon={FolderOpen}
-            />
-          </div>
+    <section
+      className="max-w-3xl w-full mx-auto space-y-4"
+      aria-label={t("settings.history.title")}
+    >
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">{t("settings.history.title")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="inline-flex items-center gap-2"
+            onClick={() => {
+              void pickAndTranscribeFiles().catch(() =>
+                toast.error(t("settings.history.transcribeFailed")),
+              );
+            }}
+          >
+            <FilePlus size={16} aria-hidden="true" />
+            <span>{t("settings.history.transcribeFile")}</span>
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="inline-flex items-center gap-2"
+            onClick={() => {
+              void commands
+                .openRecordingsFolder()
+                .then((result) => {
+                  if (result.status !== "ok")
+                    toast.error(t("settings.history.folderError"));
+                })
+                .catch(() => toast.error(t("settings.history.folderError")));
+            }}
+          >
+            <FolderOpen size={16} aria-hidden="true" />
+            <span>{t("settings.history.openFolder")}</span>
+          </Button>
         </div>
-        <div className="bg-background border border-line rounded-lg overflow-visible">
-          {content}
-        </div>
+      </header>
+      {editingId !== null && (
+        <TranscriptWorkspace
+          key={editingId}
+          id={editingId}
+          onClose={() => {
+            setEditingId(null);
+            reload();
+          }}
+        />
+      )}
+      <Input
+        type="search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        className="w-full"
+        placeholder={t("settings.history.searchPlaceholder")}
+        aria-label={t("settings.history.searchPlaceholder")}
+      />
+      <div className="flex flex-wrap gap-2 items-center">
+        <Button
+          variant={savedOnly ? "secondary" : "primary"}
+          size="sm"
+          aria-pressed={!savedOnly}
+          onClick={() => setSavedOnly(false)}
+        >
+          {t("settings.history.allRecordings")}
+        </Button>
+        <Button
+          variant={savedOnly ? "primary" : "secondary"}
+          size="sm"
+          aria-pressed={savedOnly}
+          onClick={() => setSavedOnly(true)}
+        >
+          {t("settings.history.savedRecordings")}
+        </Button>
+        <select
+          aria-label={t("settings.history.dateFilter")}
+          value={range}
+          onChange={(event) => setRange(event.target.value as HistoryRange)}
+          className="bg-background border border-line rounded-md px-3 py-1.5 text-sm"
+        >
+          <option value="all">{t("settings.history.allDates")}</option>
+          <option value="today">{t("settings.history.today")}</option>
+          <option value="week">{t("settings.history.lastWeek")}</option>
+          <option value="month">{t("settings.history.lastMonth")}</option>
+        </select>
       </div>
-    </div>
+      <div aria-busy={loading || loadingMore} className="space-y-2">
+        {loading && (
+          <p className="text-sm text-ink-2 py-6" role="status">
+            {t("settings.history.loading")}
+          </p>
+        )}
+        {error && (
+          <div role="alert" className="flex items-center gap-3 text-sm">
+            <span>{t("settings.history.loadError")}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                void loadPage(entries[entries.length - 1]?.id ?? null)
+              }
+            >
+              {t("settings.history.tryAgain")}
+            </Button>
+          </div>
+        )}
+        {!loading && !error && entries.length === 0 && (
+          <p className="py-8 text-sm text-ink-2">
+            {t(
+              query || savedOnly || range !== "all"
+                ? "settings.history.noMatches"
+                : "settings.history.empty",
+            )}
+          </p>
+        )}
+        <AudioPlayerGroup>
+          {entries.map((entry, index) => (
+            <React.Fragment key={entry.id}>
+              {(index === 0 ||
+                dayKey(entries[index - 1].timestamp) !==
+                  dayKey(entry.timestamp)) && (
+                <h3 className="pt-4 pb-1 text-xs font-semibold text-ink-2">
+                  {groupLabel(entry.timestamp)}
+                </h3>
+              )}
+              <HistoryRowCard
+                entry={entry}
+                onEdit={() => {
+                  if (editingId === null) setEditingId(entry.id);
+                }}
+                editorOpen={editingId !== null}
+                job={jobs[entry.id]}
+                getAudioUrl={getAudioUrl}
+                onChanged={reload}
+              />
+            </React.Fragment>
+          ))}
+        </AudioPlayerGroup>
+        {!loading && hasMore && !error && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={loadingMore}
+            onClick={() =>
+              void loadPage(entries[entries.length - 1]?.id ?? null)
+            }
+          >
+            {t(
+              loadingMore
+                ? "settings.history.loading"
+                : "settings.history.loadMore",
+            )}
+          </Button>
+        )}
+      </div>
+    </section>
   );
 };
 
-interface HistoryEntryProps {
-  entry: HistoryEntry;
+interface RowProps {
+  onEdit: () => void;
+  editorOpen: boolean;
+  entry: HistoryRow;
   job?: ActiveJobStatus;
-  onToggleSaved: () => void;
-  onCopyText: () => Promise<boolean>;
-  getAudioUrl: (fileName: string) => Promise<string | null>;
-  deleteAudio: (id: number) => Promise<void>;
-  retryTranscription: (id: number) => Promise<void>;
-  cancelTranscription: (id: number) => Promise<void>;
+  getAudioUrl: (fileName: string) => Promise<string>;
+  onChanged: () => void;
 }
 
-const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
+const HistoryRowCard: React.FC<RowProps> = ({
   entry,
+  onEdit,
+  editorOpen,
   job,
-  onToggleSaved,
-  onCopyText,
   getAudioUrl,
-  deleteAudio,
-  retryTranscription,
-  cancelTranscription,
+  onChanged,
 }) => {
   const { t, i18n } = useTranslation();
-  const [showCopied, setShowCopied] = useState(false);
-  // Pressed cancel: a running job stops after its current chunk.
-  const [cancelling, setCancelling] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [overflows, setOverflows] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-
-  // Queued or being transcribed in the background.
-  const retrying = job !== undefined;
+  const [original, setOriginal] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<"delete" | "retry" | null>(
+    null,
+  );
+  const [cancelling, setCancelling] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   useEffect(() => {
-    if (!retrying) setCancelling(false);
-  }, [retrying]);
-  const hasTranscription = entry.transcription_text.trim().length > 0;
-  const folded = hasTranscription && !retrying && !expanded;
-
-  // Offer "Show more" only when the folded text is actually cut off.
-  useLayoutEffect(() => {
-    const el = textRef.current;
-    if (!el || !folded) return;
-    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [folded, entry.transcription_text]);
-
-  const handleLoadAudio = useCallback(
+    if (!job) setCancelling(false);
+  }, [job]);
+  const final = finalTranscript(entry);
+  const hasFinal =
+    entry.post_processed_text !== null &&
+    entry.post_processed_text !== entry.transcription_text;
+  const text = original ? entry.transcription_text : final;
+  const label =
+    job?.state === "queued"
+      ? t("settings.history.waiting")
+      : job?.state === "running" && job.percent > 0
+        ? t("settings.history.transcribingPercent", { percent: job.percent })
+        : t("settings.history.transcribing");
+  const loadAudio = useCallback(
     () => getAudioUrl(entry.file_name),
     [getAudioUrl, entry.file_name],
   );
-
-  const handleCopyText = async () => {
-    if (!hasTranscription) {
-      return;
-    }
-
-    const copied = await onCopyText();
-    if (!copied) {
-      toast.error(t("settings.history.copyError"));
-      return;
-    }
-
-    setShowCopied(true);
-    setTimeout(() => setShowCopied(false), 2000);
-  };
-
-  const handleDeleteEntry = async () => {
+  const run = async (action: () => Promise<unknown>, errorKey: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
-      await deleteAudio(entry.id);
-    } catch (error) {
-      console.error("Failed to delete entry:", error);
-      toast.error(t("settings.history.deleteError"));
+      await action();
+    } catch {
+      toast.error(t(errorKey));
+    } finally {
+      setBusy(false);
     }
   };
-
-  const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
-
-  let progressText = t("settings.history.transcribing");
-  if (job?.state === "queued") {
-    progressText = t("settings.history.waiting");
-  } else if (job?.state === "running" && job.percent > 0) {
-    progressText = t("settings.history.transcribingPercent", {
-      percent: job.percent,
-    });
-  }
+  const copy = async () => {
+    if (await copyToClipboard(text)) {
+      setCopied(true);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1800);
+    } else toast.error(t("settings.history.copyError"));
+  };
+  const toggleSaved = () =>
+    run(async () => {
+      const result = await commands.toggleHistoryEntrySaved(entry.id);
+      if (result.status !== "ok") throw new Error(String(result.error));
+      onChanged();
+    }, "settings.history.saveError");
+  const confirm = () =>
+    run(
+      async () => {
+        if (confirmation === "delete") {
+          const result = await commands.deleteHistoryEntry(entry.id);
+          if (result.status !== "ok") throw new Error(String(result.error));
+          try {
+            localStorage.removeItem(`handy-transcript-draft-${entry.id}`);
+          } catch {
+            /* Entry is already removed from history. */
+          }
+          onChanged();
+        } else await commands.retryHistoryEntryTranscription(entry.id);
+        setConfirmation(null);
+      },
+      confirmation === "delete"
+        ? "settings.history.deleteError"
+        : "settings.history.transcribeFailed",
+    );
 
   return (
-    <div className="px-4 py-2 pb-5 flex flex-col gap-3">
-      <div className="flex justify-between items-center gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="text-sm font-medium shrink-0">{formattedDate}</p>
+    <article className="border border-line rounded-lg bg-background p-4 space-y-3">
+      <h3 className="text-sm font-semibold">{entry.title}</h3>
+      <div className="flex flex-wrap justify-between items-center gap-2">
+        <div className="text-xs text-ink-2 flex flex-wrap items-center gap-2 min-w-0">
+          <time
+            dateTime={new Date(entry.timestamp * 1000).toISOString()}
+            title={formatDateTime(String(entry.timestamp), i18n.language)}
+          >
+            {new Intl.DateTimeFormat(i18n.language, {
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(entry.timestamp * 1000)}
+          </time>
+          <span>
+            {entry.duration_seconds === null
+              ? t("settings.history.durationUnknown")
+              : durationLabel(entry.duration_seconds)}
+          </span>
+          {hasFinal && (
+            <span className="rounded bg-wash px-2 py-0.5">
+              {t("settings.history.corrected")}
+            </span>
+          )}
           {entry.source_name && (
-            <span
-              className="flex items-center gap-1 min-w-0 text-sm text-ink-3"
-              title={entry.source_name}
-            >
-              <FileAudio width={14} height={14} className="shrink-0" />
-              <span className="truncate">{entry.source_name}</span>
+            <span className="truncate max-w-60" title={entry.source_name}>
+              {entry.source_name}
             </span>
           )}
         </div>
-        <div className="flex items-center shrink-0">
-          <IconButton
-            onClick={handleCopyText}
-            disabled={!hasTranscription || retrying}
-            title={t("settings.history.copyToClipboard")}
-          >
-            {showCopied ? (
-              <Check width={16} height={16} />
-            ) : (
-              <Copy width={16} height={16} />
-            )}
-          </IconButton>
-          <IconButton
-            onClick={onToggleSaved}
-            active={entry.saved}
-            title={
-              entry.saved
-                ? t("settings.history.unsave")
-                : t("settings.history.save")
-            }
-          >
-            <Star
-              width={16}
-              height={16}
-              fill={entry.saved ? "currentColor" : "none"}
-            />
-          </IconButton>
-          {retrying ? (
-            <IconButton
-              onClick={() => {
-                setCancelling(true);
-                void cancelTranscription(entry.id);
-              }}
-              disabled={cancelling}
-              title={t("settings.history.cancelTranscription")}
-            >
-              <X width={16} height={16} />
-            </IconButton>
-          ) : (
-            <IconButton
-              onClick={() => retryTranscription(entry.id)}
-              title={t("settings.history.retranscribe")}
-            >
-              <RotateCcw width={16} height={16} />
-            </IconButton>
-          )}
-          <IconButton
-            onClick={handleDeleteEntry}
-            title={t("settings.history.delete")}
-          >
-            <Trash2 width={16} height={16} />
-          </IconButton>
-        </div>
-      </div>
-
-      <div className="flex flex-col items-start gap-1 pb-2">
-        <p
-          ref={textRef}
-          className={`italic text-sm w-full ${
-            retrying
-              ? ""
-              : hasTranscription
-                ? "text-text select-text cursor-text whitespace-pre-wrap break-words"
-                : "text-ink-3"
-          }`}
-          style={
-            retrying
-              ? { animation: "transcribe-pulse 3s ease-in-out infinite" }
-              : folded
-                ? {
-                    display: "-webkit-box",
-                    WebkitLineClamp: FOLDED_LINES,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                  }
-                : undefined
-          }
-        >
-          {retrying && (
-            <style>{`
-            @keyframes transcribe-pulse {
-              0%, 100% { color: var(--color-ink-3); }
-              50% { color: var(--color-text); }
-            }
-          `}</style>
-          )}
-          {retrying
-            ? progressText
-            : hasTranscription
-              ? entry.transcription_text
-              : entry.source_name
-                ? // Cancelled, interrupted by a quit, or failed.
-                  t("settings.history.notTranscribed")
-                : t("settings.history.transcriptionFailed")}
-        </p>
-        {hasTranscription && !retrying && (expanded || overflows) && (
+        <div className="flex gap-2 items-center">
           <button
             type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="text-xs font-medium text-ink-3 hover:text-logo-primary cursor-pointer"
+            onClick={() => void copy()}
+            disabled={!!job || !text.length}
+            className="inline-flex items-center gap-1 text-xs disabled:opacity-40 hover:text-logo-primary"
+            aria-label={t(
+              original
+                ? "settings.history.copyOriginal"
+                : "settings.history.copyToClipboard",
+            )}
           >
-            {expanded
-              ? t("settings.history.showLess")
-              : t("settings.history.showMore")}
+            {copied ? (
+              <Check size={15} aria-hidden="true" />
+            ) : (
+              <Copy size={15} aria-hidden="true" />
+            )}
+            <span>
+              {t(copied ? "settings.history.copied" : "settings.history.copy")}
+            </span>
           </button>
+          <button
+            type="button"
+            disabled={busy}
+            aria-pressed={entry.saved}
+            onClick={() => void toggleSaved()}
+            title={t(
+              entry.saved ? "settings.history.unsave" : "settings.history.save",
+            )}
+            aria-label={t(
+              entry.saved ? "settings.history.unsave" : "settings.history.save",
+            )}
+            className={
+              entry.saved
+                ? "text-logo-primary"
+                : "text-ink-2 hover:text-logo-primary"
+            }
+          >
+            <Star size={17} fill={entry.saved ? "currentColor" : "none"} />
+          </button>
+        </div>
+      </div>
+      <p
+        className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${expanded ? "" : "line-clamp-2"} ${job ? "text-ink-2" : "text-text"}`}
+      >
+        {job
+          ? label
+          : text ||
+            t(
+              hasFinal
+                ? "settings.history.emptyTranscript"
+                : entry.source_name
+                  ? "settings.history.notTranscribed"
+                  : "settings.history.transcriptionFailed",
+            )}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          className="text-xs text-ink-2 hover:text-logo-primary"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {t(
+            expanded
+              ? "settings.history.closeTranscript"
+              : "settings.history.openTranscript",
+          )}
+        </button>
+        {job ? (
+          <button
+            type="button"
+            disabled={cancelling}
+            className="text-xs flex gap-1 items-center"
+            onClick={() => {
+              setCancelling(true);
+              void commands
+                .cancelHistoryEntryTranscription(entry.id)
+                .catch(() => {
+                  setCancelling(false);
+                  toast.error(t("settings.history.transcribeFailed"));
+                });
+            }}
+          >
+            <X size={14} />
+            {t("settings.history.cancelTranscription")}
+          </button>
+        ) : (
+          <details className="text-xs text-ink-2">
+            <summary className="cursor-pointer hover:text-logo-primary">
+              {t("settings.history.moreActions")}
+            </summary>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmation("retry")}
+              >
+                {t("settings.history.retranscribe")}
+              </button>
+              <button
+                type="button"
+                disabled={busy || editorOpen}
+                onClick={() => setConfirmation("delete")}
+              >
+                {t("settings.history.delete")}
+              </button>
+            </div>
+          </details>
         )}
       </div>
-
-      <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
-    </div>
+      {confirmation && (
+        <div
+          role="alert"
+          className="rounded-md border border-line p-3 text-sm space-y-2"
+        >
+          <p>
+            {t(
+              confirmation === "delete"
+                ? "settings.history.confirmDelete"
+                : hasFinal
+                  ? "settings.history.confirmRetryCorrected"
+                  : "settings.history.confirmRetry",
+            )}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || (editorOpen && confirmation === "delete")}
+              onClick={() => void confirm()}
+            >
+              {t(
+                confirmation === "delete"
+                  ? "settings.history.delete"
+                  : "settings.history.retranscribe",
+              )}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => setConfirmation(null)}
+            >
+              {t("tray.cancel")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {expanded && (
+        <div className="border-t border-line pt-3 space-y-3">
+          {!job && !editorOpen && (
+            <Button size="sm" variant="secondary" onClick={onEdit}>
+              {t("workspace.title")}
+            </Button>
+          )}
+          {hasFinal && (
+            <button
+              type="button"
+              className="text-xs text-logo-primary"
+              aria-pressed={original}
+              onClick={() => setOriginal((value) => !value)}
+            >
+              {t(
+                original
+                  ? "settings.history.viewFinal"
+                  : "settings.history.viewOriginal",
+              )}
+            </button>
+          )}
+          <AudioPlayer
+            onLoadRequest={loadAudio}
+            knownDuration={entry.duration_seconds}
+            className="w-full"
+          />
+        </div>
+      )}
+    </article>
   );
 };

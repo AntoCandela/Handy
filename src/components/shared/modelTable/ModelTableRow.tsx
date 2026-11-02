@@ -32,6 +32,7 @@ interface ModelTableRowProps {
   download?: RowDownload | null;
   /** Second line; takes precedence over download progress and description. */
   line?: React.ReactNode;
+  details?: React.ReactNode;
   /** Delete/stop button (Models page). */
   slot?: React.ReactNode;
   /** Replaces the columns and slot (the delete confirmation). */
@@ -55,6 +56,7 @@ export const ModelTableRow: React.FC<ModelTableRowProps> = ({
   mark,
   download,
   line,
+  details,
   slot,
   tail,
   onActivate,
@@ -150,7 +152,9 @@ export const ModelTableRow: React.FC<ModelTableRowProps> = ({
           ? "bg-wash"
           : selected
             ? // A quiet grey fill, a step past hover's wash.
-              "cursor-default bg-line"
+              details
+              ? "cursor-default bg-logo-primary/10 ring-1 ring-inset ring-logo-primary/30"
+              : "cursor-default bg-line"
             : `${inert ? "cursor-default" : "cursor-pointer hover:bg-wash"} ${highlighted === entry.id ? "bg-wash" : ""}`
       }`}
     >
@@ -195,6 +199,7 @@ export const ModelTableRow: React.FC<ModelTableRowProps> = ({
         >
           {shownLine}
         </span>
+        {details}
       </span>
       {tail ?? (
         <Values

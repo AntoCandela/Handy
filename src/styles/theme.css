@@ -242,3 +242,23 @@
   --color-warning-wash: var(--dark-color-warning-wash);
   --color-error-wash: var(--dark-color-error-wash);
 }
+
+/* User appearance preferences, shared by settings and the overlay. */
+:root[data-text-size="large"] {
+  font-size: 18px;
+}
+:root[data-text-size="large"] .stext-cap {
+  font-size: 18px;
+}
+:root[data-text-size="large"] .recording-label {
+  font-size: 14px;
+}
+:root[data-text-size="large"] .recording-details {
+  font-size: 12px;
+}
+:root[data-appearance="contrast"] {
+  --color-ink-2: var(--color-text);
+  --color-ink-3: var(--color-text);
+  --color-line: var(--color-text);
+  --color-line-strong: var(--color-text);
+}

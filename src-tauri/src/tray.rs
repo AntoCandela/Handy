@@ -498,9 +498,22 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     #[cfg(not(target_os = "macos"))]
     let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
+    let english = get_tray_translations(Some("en".into()));
+    let history_label = if strings.history.is_empty() {
+        &english.history
+    } else {
+        &strings.history
+    };
+    let models_label = if strings.manage_models.is_empty() {
+        &english.manage_models
+    } else {
+        &strings.manage_models
+    };
+    let history_i = MenuItem::with_id(app, "open_history", history_label, true, None::<&str>)?;
+    let models_i = MenuItem::with_id(app, "open_models", models_label, true, None::<&str>)?;
     // Create common menu items
     let version_label = version_label();
-    let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
+    let version_i = MenuItem::with_id(app, "open_about", &version_label, true, None::<&str>)?;
     let settings_i = MenuItem::with_id(
         app,
         "settings",
@@ -535,6 +548,8 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &cancel_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &history_i,
+                &models_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -548,15 +563,21 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             .downloaded_models
             .iter()
             .find(|(id, _)| *id == inputs.selected_model)
-            .map(|(_, name)| name.clone())
+            .map(|(_, name)| format!("{}: {}", strings.model, name))
             .unwrap_or_else(|| strings.model.clone());
 
-        let model_submenu =
-            Submenu::with_id(app, "model_submenu", &submenu_label, !inputs.models_locked)?;
+        let model_submenu = Submenu::with_id(app, "model_submenu", &submenu_label, true)?;
         for (id, name) in &inputs.downloaded_models {
             let is_active = *id == inputs.selected_model;
             let item_id = format!("model_select:{}", id);
-            let item = CheckMenuItem::with_id(app, &item_id, name, true, is_active, None::<&str>)?;
+            let item = CheckMenuItem::with_id(
+                app,
+                &item_id,
+                name,
+                !inputs.models_locked,
+                is_active,
+                None::<&str>,
+            )?;
             model_submenu.append(&item)?;
         }
 
@@ -568,15 +589,18 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             None::<&str>,
         )?;
 
+        model_submenu.append(&separator()?)?;
+        model_submenu.append(&unload_model_i)?;
+        model_submenu.append(&models_i)?;
         Menu::with_items(
             app,
             &[
                 &version_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &history_i,
                 &separator()?,
                 &model_submenu,
-                &unload_model_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -666,7 +690,18 @@ pub fn copy_last_transcript(app: &AppHandle) {
         }
     };
 
-    let text = last_transcript_text(&entry);
+    let workspace = match history_manager.transcript_workspace(entry.id) {
+        Ok(workspace) => workspace,
+        Err(err) => {
+            error!("Could not read latest transcript corrections: {}", err);
+            return;
+        }
+    };
+    let text = if workspace.revision > 0 {
+        workspace.text.as_str()
+    } else {
+        last_transcript_text(&entry)
+    };
     if text.trim().is_empty() {
         warn!("Last completed transcription is empty; skipping tray copy.");
         return;

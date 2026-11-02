@@ -1,3 +1,4 @@
+mod workspace;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info, warn};
@@ -9,6 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_specta::Event;
+pub use workspace::TranscriptWorkspace;
 
 use crate::language_detection::{LanguageDecision, LanguageSource};
 
@@ -81,6 +83,25 @@ pub struct HistoryEntry {
     pub language: Option<String>,
     /// How that language was chosen; `None` before it was recorded.
     pub language_source: Option<LanguageSource>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct HistorySearchEntry {
+    pub entry: HistoryEntry,
+    pub duration_seconds: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct HistorySearchPage {
+    pub entries: Vec<HistorySearchEntry>,
+    pub has_more: bool,
+}
+
+// Header-only read: never decode entire recordings just to render a history row.
+fn recording_duration(path: &std::path::Path) -> Option<f64> {
+    let wav = hound::WavReader::open(path).ok()?;
+    let rate = wav.spec().sample_rate;
+    (rate > 0).then(|| wav.duration() as f64 / rate as f64)
 }
 
 pub struct HistoryManager {
@@ -183,6 +204,7 @@ impl HistoryManager {
             }
         }
 
+        workspace::initialize(conn)?;
         Ok(())
     }
 
@@ -554,6 +576,74 @@ impl HistoryManager {
         Ok(())
     }
 
+    pub fn search_history_entries(
+        &self,
+        cursor: Option<i64>,
+        limit: usize,
+        query: &str,
+        saved_only: bool,
+        since: Option<i64>,
+    ) -> Result<HistorySearchPage> {
+        let conn = self.get_connection()?;
+        let page = Self::search_with_conn(&conn, cursor, limit, query, saved_only, since)?;
+        let entries = page
+            .entries
+            .into_iter()
+            .map(|mut entry| {
+                let workspace = Self::workspace_with_conn(&conn, entry.id)?;
+                if workspace.revision > 0 {
+                    entry.post_processed_text = Some(workspace.text);
+                }
+                let duration_seconds =
+                    recording_duration(&self.recordings_dir.join(&entry.file_name));
+                Ok(HistorySearchEntry {
+                    entry,
+                    duration_seconds,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(HistorySearchPage {
+            entries,
+            has_more: page.has_more,
+        })
+    }
+
+    fn search_with_conn(
+        conn: &Connection,
+        cursor: Option<i64>,
+        limit: usize,
+        query: &str,
+        saved_only: bool,
+        since: Option<i64>,
+    ) -> Result<PaginatedHistory> {
+        let limit = limit.clamp(1, 100);
+        // Parameters and instr make % and _ literal search characters. Apply
+        // filters before the cursor/limit so older matches remain discoverable.
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, timestamp, saved, title, transcription_text,
+                    post_processed_text, post_process_prompt, post_process_requested, source_name, language, language_source
+             FROM transcription_history
+             WHERE (?1 IS NULL OR id < ?1)
+               AND (?2 = 0 OR saved = 1)
+               AND (?3 IS NULL OR timestamp >= ?3)
+               AND (?4 = '' OR instr(lower(transcription_text), lower(?4)) > 0
+                    OR instr(lower(COALESCE(post_processed_text, '')), lower(?4)) > 0
+                    OR instr(lower(COALESCE(source_name, '')), lower(?4)) > 0
+                    OR instr(lower(title), lower(?4)) > 0
+                    OR EXISTS (SELECT 1 FROM handy_transcript_edits e WHERE e.entry_id = transcription_history.id AND instr(lower(e.text), lower(?4)) > 0 AND e.revision = (SELECT MAX(revision) FROM handy_transcript_edits WHERE entry_id = transcription_history.id)))
+             ORDER BY id DESC LIMIT ?5",
+        )?;
+        let mut entries = stmt
+            .query_map(
+                params![cursor, saved_only, since, query.trim(), (limit + 1) as i64],
+                Self::map_history_entry,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let has_more = entries.len() > limit;
+        entries.truncate(limit);
+        Ok(PaginatedHistory { entries, has_more })
+    }
+
     pub async fn get_history_entries(
         &self,
         cursor: Option<i64>,
@@ -754,6 +844,7 @@ mod tests {
             );",
         )
         .expect("create transcription_history table");
+        workspace::initialize(&conn).unwrap();
         conn
     }
 
@@ -786,6 +877,66 @@ mod tests {
     fn user_version(conn: &Connection) -> i32 {
         conn.pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("read user_version")
+    }
+
+    #[test]
+    fn search_filters_before_paginating_and_searches_final_text() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100, "original", Some("Needle corrected"));
+        insert_entry(&conn, 200, "needle spoken", None);
+        for timestamp in 300..350 {
+            insert_entry(&conn, timestamp, "unrelated", None);
+        }
+        let first =
+            HistoryManager::search_with_conn(&conn, None, 1, "needle", false, None).unwrap();
+        assert_eq!(first.entries[0].timestamp, 200);
+        assert!(first.has_more);
+        let second = HistoryManager::search_with_conn(
+            &conn,
+            Some(first.entries[0].id),
+            1,
+            "needle",
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(second.entries[0].timestamp, 100);
+        assert!(!second.has_more);
+    }
+
+    #[test]
+    fn search_combines_saved_date_and_literal_filename_filters() {
+        let conn = setup_conn();
+        for timestamp in [100, 200, 300] {
+            insert_entry(&conn, timestamp, "unrelated", None);
+        }
+        conn.execute("UPDATE transcription_history SET source_name = 'meeting_100%.wav', saved = (timestamp != 300)", []).unwrap();
+        let page =
+            HistoryManager::search_with_conn(&conn, None, 30, "_100%", true, Some(150)).unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.entries[0].timestamp, 200);
+        let missing =
+            HistoryManager::search_with_conn(&conn, None, 30, "_200%", false, None).unwrap();
+        assert!(missing.entries.is_empty());
+    }
+
+    #[test]
+    fn duration_reads_stereo_frames_and_handles_missing_audio() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("audio.wav");
+        assert_eq!(recording_duration(&path), None);
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        for _ in 0..48000 {
+            writer.write_sample(0_i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert_eq!(recording_duration(&path), Some(1.5));
     }
 
     #[test]

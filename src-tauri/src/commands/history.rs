@@ -1,10 +1,29 @@
 use crate::managers::{
-    history::{HistoryEntry, HistoryManager, PaginatedHistory},
+    history::{HistoryEntry, HistoryManager, HistorySearchPage, PaginatedHistory},
     transcription_jobs::TranscriptionJobManager,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
+
+#[tauri::command]
+#[specta::specta]
+pub async fn search_history_entries(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    cursor: Option<i64>,
+    limit: usize,
+    query: String,
+    saved_only: bool,
+    since: Option<i64>,
+) -> Result<HistorySearchPage, String> {
+    let manager = Arc::clone(&history_manager);
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.search_history_entries(cursor, limit, &query, saved_only, since)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -138,4 +157,28 @@ pub async fn update_recording_retention_period(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_transcript_workspace(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+) -> Result<crate::managers::history::TranscriptWorkspace, String> {
+    history_manager
+        .transcript_workspace(id)
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+#[specta::specta]
+pub fn save_transcript_edit(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+    title: String,
+    text: String,
+    expected: i64,
+) -> Result<(), String> {
+    history_manager
+        .save_transcript_edit(id, &title, &text, expected)
+        .map_err(|e| e.to_string())
 }

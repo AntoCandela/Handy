@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { SettingsGroup } from "../../ui/SettingsGroup";
+import { SettingsSection as SettingsGroup } from "../SettingsSection";
+import { SlidersHorizontal } from "lucide-react";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { useModelStore } from "../../../stores/modelStore";
@@ -24,6 +25,8 @@ export const ModelSettingsCard: React.FC = () => {
 
   return (
     <SettingsGroup
+      icon={SlidersHorizontal}
+      description={t("settings.refresh.modelDescription")}
       title={t("settings.modelSettings.title", {
         model: currentModelInfo.name,
       })}

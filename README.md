@@ -1,4 +1,46 @@
-# Handy
+# Handy — unofficial personal fork
+
+This is an experimental, independently maintained source fork of
+[Handy by CJ Pais and contributors](https://github.com/cjpais/Handy).
+It is not an official Handy release. The original MIT license and attribution
+are preserved in [LICENSE](LICENSE).
+
+## What this fork adds
+
+- Movable, resizable Windows recording overlays, with separate compact and live layouts.
+- Editable live transcripts that preserve your corrections while you keep speaking.
+- Searchable history with saved entries, transcript editing, original versions, and text export.
+- Optional local writing profiles for wording cleanup and translation into English.
+- Six appearance presets, accent colors, and independent text sizing.
+- Refreshed Models, General, Advanced, About, model picker, and tray navigation.
+
+### Run this version
+
+Follow [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md) for prerequisites and the
+isolated **Handy Dev** setup, then use `bun install` and `bun run dev:local`.
+Use `bun run start:local` to reopen an existing local build.
+Quit installed Handy first to avoid competing shortcuts and microphone access.
+
+Cleanup and translation require a separately installed local Ollama runtime and
+text model. Plain dictation does not. No text model is installed automatically.
+These profiles use a fixed local endpoint and reject remote model metadata;
+existing external-provider processing is bypassed in this fork.
+
+**Status:** source preview, primarily validated on Windows. The custom Windows
+overlay behavior is not a promise of equivalent behavior on macOS or Linux.
+New interface strings currently have English source translations. Installer,
+upgrade, and cross-platform release validation remain pending.
+
+The default upstream packaging and update configuration has not been converted
+into a distributable fork release. Use the isolated Dev launcher; do not distribute
+installers made with the default build command. See
+[FORK-PREPARATION.md](FORK-PREPARATION.md) for the publication checklist.
+
+## Original Handy documentation
+
+The documentation below describes upstream Handy. Its downloads, sponsors,
+community links, and release instructions refer to the original project and do
+not include this fork's changes.
 
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
 

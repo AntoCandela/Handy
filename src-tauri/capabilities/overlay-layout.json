@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay-layout",
+  "description": "Allow native move and resize gestures only in the Windows recording overlay.",
+  "platforms": ["windows"],
+  "windows": ["recording_overlay"],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging"
+  ]
+}

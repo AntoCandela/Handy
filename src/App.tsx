@@ -86,6 +86,15 @@ function App() {
   const [migrationModelId, setMigrationModelId] = useState<string | null>(null);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
+  useEffect(() => {
+    const unlisten = listen<string>("tray-navigate", (event) => {
+      if (["general", "history", "models", "about"].includes(event.payload))
+        setCurrentSection(event.payload as SidebarSection);
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
   const showHistory = useCallback(() => setCurrentSection("history"), []);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
@@ -178,6 +187,22 @@ function App() {
     };
   }, [t]);
 
+  useEffect(() => {
+    const unlisten = listen("local-writing-error", () =>
+      toast.error(t("writingProfiles.failed"), {
+        description: t("writingProfiles.fallback"),
+        duration: 15000,
+        action: {
+          label: t("recordingExperience.openHistory"),
+          onClick: showHistory,
+        },
+      }),
+    );
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [t, showHistory]);
+
   // Listen for paste failures and show a toast.
   // The technical error detail is logged to handy.log on the Rust side
   // (see actions.rs `error!("Failed to paste transcription: ...")`),
@@ -186,6 +211,11 @@ function App() {
     const unlisten = listen("paste-error", () => {
       toast.error(t("errors.pasteFailedTitle"), {
         description: t("errors.pasteFailed"),
+        duration: 15000,
+        action: {
+          label: t("recordingExperience.openHistory"),
+          onClick: showHistory,
+        },
       });
     });
     return () => {
@@ -198,7 +228,12 @@ function App() {
   useEffect(() => {
     const unlisten = listen<string>("transcription-error", (event) => {
       toast.error(t("errors.transcriptionFailedTitle"), {
-        description: event.payload,
+        description: t("recordingExperience.recoveryHint"),
+        duration: 15000,
+        action: {
+          label: t("recordingExperience.openHistory"),
+          onClick: showHistory,
+        },
       });
     });
     return () => {

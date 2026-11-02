@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Lock, Trash2, X } from "lucide-react";
+import { Loader2, Lock, MoreHorizontal, Trash2, X } from "lucide-react";
 import { DownloadMark } from "@/components/shared/DownloadMark";
 import { Radio } from "@/components/ui/Radio";
 import { Button } from "@/components/ui/Button";
@@ -123,18 +123,25 @@ export const ModelRow: React.FC<{ entry: Entry }> = ({ entry }) => {
     if (deletable) {
       const label = t("settings.models.deleteModel", { name: entry.name });
       return (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setAsking(true);
-          }}
-          title={label}
-          aria-label={label}
-          className={`${slotClass} opacity-40 transition-opacity group-hover:opacity-100 focus-visible:opacity-100`}
-        >
-          <Trash2 className="size-[14px]" aria-hidden="true" />
-        </button>
+        <details className="relative" onClick={(e) => e.stopPropagation()}>
+          <summary
+            aria-label={t("settings.models.moreActions", { name: entry.name })}
+            className={`${slotClass} list-none [&::-webkit-details-marker]:hidden`}
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </summary>
+          <button
+            type="button"
+            className="absolute end-0 top-full z-10 flex items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-background p-3 text-xs shadow-lg"
+            onClick={(e) => {
+              e.currentTarget.closest("details")?.removeAttribute("open");
+              setAsking(true);
+            }}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+            {label}
+          </button>
+        </details>
       );
     }
     // Where the trash was: the reason it's gone.
@@ -179,6 +186,50 @@ export const ModelRow: React.FC<{ entry: Entry }> = ({ entry }) => {
       mark={mark}
       download={download}
       line={line}
+      details={
+        !asking && (
+          <span className="mt-2 flex max-w-full flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`rounded-full px-2 py-0.5 ${entry.streaming ? "bg-logo-primary/10 text-logo-primary" : "bg-wash text-ink-2"}`}
+            >
+              {t(
+                entry.streaming
+                  ? "settings.models.liveText"
+                  : "settings.models.afterRecording",
+              )}
+            </span>
+            {entry.translate && (
+              <span className="text-ink-2">
+                {t("modelTable.tags.translate")}
+              </span>
+            )}
+            {(place === "ready" || place === "remote") && (
+              <button
+                type="button"
+                disabled={inert}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  act();
+                }}
+                className="rounded-md border border-line px-2 py-0.5 font-medium hover:border-logo-primary/40 hover:bg-logo-primary/10 disabled:opacity-40"
+              >
+                {t(
+                  place === "remote"
+                    ? locked
+                      ? "settings.models.download"
+                      : "settings.models.downloadAndUse"
+                    : "settings.models.useModel",
+                )}
+              </button>
+            )}
+            {on && (
+              <span className="font-medium text-logo-primary">
+                {t("settings.models.selectedLabel")}
+              </span>
+            )}
+          </span>
+        )
+      }
       slot={slot}
       tail={ask || undefined}
       inert={inert}

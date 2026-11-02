@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Configuration
 const LOCALES_DIR = path.join(__dirname, "..", "src", "i18n", "locales");
 const REFERENCE_LANG = "en";
+const allowEnglishFallback = process.argv.includes("--allow-english-fallback");
 
 type TranslationData = Record<string, unknown>;
 
@@ -105,6 +106,30 @@ function validateTranslations(): void {
 
   // Get all key paths from reference
   const referenceKeyPaths = getAllKeyPaths(referenceData);
+  const fallbackKeys: string[] = allowEnglishFallback
+    ? JSON.parse(
+        fs.readFileSync(
+          path.join(LOCALES_DIR, "..", "english-fallback-keys.json"),
+          "utf8",
+        ),
+      )
+    : [];
+  if (
+    !Array.isArray(fallbackKeys) ||
+    fallbackKeys.some(
+      (key) =>
+        typeof key !== "string" ||
+        !referenceKeyPaths.some((parts) => parts.join(".") === key),
+    )
+  ) {
+    throw new Error(
+      "English fallback inventory contains invalid or stale keys",
+    );
+  }
+  const fallbackSet = new Set(fallbackKeys);
+  if (allowEnglishFallback) {
+    console.log(`Allowing English fallback for ${fallbackSet.size} fork keys`);
+  }
   console.log(`Reference has ${referenceKeyPaths.length} keys\n`);
 
   // Track validation results
@@ -123,7 +148,8 @@ function validateTranslations(): void {
 
     // Find missing keys
     const missing = referenceKeyPaths.filter(
-      (keyPath) => !hasKeyPath(langData, keyPath),
+      (keyPath) =>
+        !hasKeyPath(langData, keyPath) && !fallbackSet.has(keyPath.join(".")),
     );
 
     // Find extra keys (keys in language but not in reference)
@@ -152,7 +178,7 @@ function validateTranslations(): void {
 
     if (result.valid) {
       console.log(
-        colorize(`✓ ${lang.toUpperCase()}: All keys present`, "green"),
+        colorize(`✓ ${lang.toUpperCase()}: Required keys present`, "green"),
       );
     } else {
       console.log(colorize(`✗ ${lang.toUpperCase()}: Issues found`, "red"));
@@ -212,7 +238,7 @@ function validateTranslations(): void {
   } else {
     console.log(
       colorize(
-        `\n✓ All ${totalCount} languages have complete translations!`,
+        `\n✓ All ${totalCount} languages passed${allowEnglishFallback ? " (explicit English fallbacks allowed)" : ""}!`,
         "green",
       ),
     );

@@ -19,6 +19,10 @@ use tauri_plugin_autostart::ManagerExt;
 /// startup. This mirrors the pre-existing behavior of ignoring
 /// enable()/disable() results.
 pub fn apply_autostart(app: &AppHandle, enabled: bool) {
+    // The isolated local build must never change the installed app's login item.
+    if app.config().identifier == "com.pais.handy.dev" {
+        return;
+    }
     #[cfg(target_os = "macos")]
     if macos::login_item_api_available() {
         macos::remove_plugin_launch_agent(app);

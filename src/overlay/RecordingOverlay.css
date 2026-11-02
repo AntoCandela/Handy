@@ -48,6 +48,7 @@
   justify-content: center; /* horizontal centering, kept for both forms */
   align-items: flex-end; /* bottom placement: flush to the bottom edge */
   font-family: var(--s-font);
+  color: var(--color-text);
 }
 .ov-stage.top {
   align-items: flex-start; /* top placement: flush to the top edge */
@@ -98,6 +99,8 @@
 
 /* Shared base card. Flat: theme surface + hairline border, no shadow or blur. */
 .scard {
+  position: relative;
+  container: overlay-card / inline-size;
   width: var(--ov-pill-w);
   /* Never wider than the window: an unaccounted content zoom degrades to a
      narrower card instead of clipping. 2px = our border (no border-box reset). */
@@ -406,4 +409,224 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Windows live overlay: native gestures keep desktop focus in the target app. */
+.overlay-drag {
+  cursor: grab;
+  user-select: none;
+}
+.overlay-drag:active {
+  cursor: grabbing;
+}
+.scard.custom-layout.open,
+.scard.compact.custom-layout {
+  width: calc(100vw - 8px);
+  height: calc(100vh - 2px);
+  box-sizing: border-box;
+  transition: none;
+  animation: none;
+  transform: none;
+}
+.scard.compact.custom-layout .sbase {
+  flex: 1;
+  min-height: var(--ov-base-h);
+}
+.scard.custom-layout.open .stext {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.scard.custom-layout.open .stext-clip {
+  display: flex;
+  flex-direction: column;
+}
+.scard.custom-layout.open .stext-cap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.overlay-resize {
+  position: absolute;
+  z-index: 5;
+}
+.overlay-resize-North,
+.overlay-resize-South {
+  left: 16px;
+  right: 16px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.overlay-resize-North {
+  top: 0;
+}
+.overlay-resize-South {
+  bottom: 0;
+}
+.overlay-resize-East,
+.overlay-resize-West {
+  top: 16px;
+  bottom: 16px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.overlay-resize-East {
+  right: 0;
+}
+.overlay-resize-West {
+  left: 0;
+}
+.overlay-resize-NorthEast,
+.overlay-resize-NorthWest,
+.overlay-resize-SouthEast,
+.overlay-resize-SouthWest {
+  width: 16px;
+  height: 16px;
+}
+.overlay-resize-NorthEast {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.overlay-resize-NorthWest {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.overlay-resize-SouthEast {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.overlay-resize-SouthWest {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.live-editor {
+  box-sizing: border-box;
+  width: 100%;
+  height: min(var(--ov-cap-max-h), calc(100vh - var(--ov-base-h) - 20px));
+  min-height: 40px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  caret-color: var(--s-accent);
+  cursor: text;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  user-select: text;
+}
+.scard.custom-layout.open .live-editor {
+  height: 0;
+}
+.live-editor:focus-visible {
+  box-shadow: inset 0 -1px var(--s-accent);
+}
+.editor-error {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+.editor-error button {
+  margin-left: 8px;
+  text-decoration: underline;
+}
+
+/* Two levels of information: capture state, then device/model details. */
+.sbase {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.listening-base {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding-inline: 14px;
+}
+.recording-status {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.recording-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.recording-label {
+  font-size: 12px;
+  line-height: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recording-heading .swave {
+  height: 12px;
+  padding: 0;
+  margin-inline-start: 4px;
+  overflow: hidden;
+}
+.recording-heading .swave i {
+  max-height: 10px;
+}
+.recording-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--s-muted);
+  font-size: 11px;
+  line-height: 13px;
+}
+.recording-device {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.recording-device svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  opacity: 0.85;
+}
+.recording-device > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recording-model {
+  flex: 1 1 0;
+}
+.listening-base .stimer {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+.scard.compact .stimer {
+  opacity: 1;
+}
+.live-editor {
+  font-style: normal;
+}
+@container overlay-card (max-width: 300px) {
+  .recording-details {
+    display: none;
+  }
+  .listening-base {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+}
+@container overlay-card (max-width: 240px) {
+  .recording-heading .swave {
+    display: none;
+  }
 }

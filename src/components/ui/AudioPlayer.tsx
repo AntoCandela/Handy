@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Play, Pause } from "lucide-react";
 
 interface AudioPlayerProps {
@@ -16,6 +17,7 @@ interface AudioPlayerProps {
   onLoadRequest?: () => Promise<string | null>;
   className?: string;
   autoPlay?: boolean;
+  knownDuration?: number | null;
 }
 
 interface AudioPlayerGroupContextValue {
@@ -55,10 +57,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onLoadRequest,
   className = "",
   autoPlay = false,
+  knownDuration = null,
 }) => {
+  const { t } = useTranslation();
   const group = useContext(AudioPlayerGroupContext);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState<number | null>(knownDuration);
+  const [playbackError, setPlaybackError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(initialSrc ?? null);
@@ -123,7 +128,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (!audio) return;
 
     const handleLoadedMetadata = () => {
-      setDuration(audio.duration || 0);
+      setDuration(Number.isFinite(audio.duration) ? audio.duration : null);
       setCurrentTime(0);
     };
 
@@ -142,6 +147,12 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       setIsPlaying(false);
     };
 
+    const handleError = () => {
+      setPlaybackError(true);
+      setIsPlaying(false);
+      setIsLoading(false);
+    };
+    audio.addEventListener("error", handleError);
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("play", handlePlay);
@@ -149,6 +160,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
     return () => {
       group?.releasePlayback(audio);
+      audio.removeEventListener("error", handleError);
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("play", handlePlay);
@@ -165,12 +177,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     // Play when loadedSrc changes from null to a value (lazy load case)
     if (loadedSrc && !prevLoadedSrc.current && onLoadRequest) {
       audio.play().catch((error) => {
+        setPlaybackError(true);
         console.error("Auto-play failed:", error);
       });
     }
     // Or when autoPlay is set with initial src
     else if (autoPlay && initialSrc && !prevLoadedSrc.current) {
       audio.play().catch((error) => {
+        setPlaybackError(true);
         console.error("Auto-play failed:", error);
       });
     }
@@ -215,6 +229,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (!audio) return;
     if (isLoading) return;
 
+    setPlaybackError(false);
     try {
       if (isPlaying) {
         audio.pause();
@@ -227,13 +242,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           if (newSrc) {
             setLoadedSrc(newSrc);
             // Playback will be triggered by the useEffect watching loadedSrc
-          }
+          } else setPlaybackError(true);
         } else if (src) {
           await audio.play();
         }
       }
     } catch (error) {
+      setPlaybackError(true);
       console.error("Playback failed:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -265,7 +283,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   // Fix playhead positioning with better edge case handling
   const getProgressPercent = (): number => {
-    if (duration <= 0) return 0;
+    if (duration === null || duration <= 0) return 0;
 
     // Handle the end case - if we're within 0.1 seconds of the end, show 100%
     if (duration - currentTime < 0.1) return 100;
@@ -277,14 +295,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const progressPercent = getProgressPercent();
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex flex-wrap items-center gap-3 ${className}`}>
       <audio ref={audioRef} src={src ?? undefined} preload="metadata" />
 
       <button
         onClick={togglePlay}
         disabled={isLoading}
         className="transition-colors cursor-pointer text-text hover:text-logo-primary disabled:opacity-50"
-        aria-label={isPlaying ? "Pause" : "Play"}
+        aria-label={t(
+          isPlaying
+            ? "settings.history.pauseAudio"
+            : "settings.history.playAudio",
+        )}
       >
         {isPlaying ? (
           <Pause width={20} height={20} fill="currentColor" />
@@ -300,6 +322,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
         <input
           type="range"
+          aria-label={t("settings.history.seekAudio")}
+          disabled={!src || duration === null || duration <= 0}
           min="0"
           max={duration || 0}
           step="0.01"
@@ -314,9 +338,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         />
 
         <span className="text-xs text-ink-2 min-w-[30px] tabular-nums">
-          {formatTime(duration)}
+          {duration === null
+            ? t("settings.history.unknownTime")
+            : formatTime(duration)}
         </span>
       </div>
+      {playbackError && (
+        <span role="alert" className="w-full text-xs text-error">
+          {t("settings.history.audioUnavailable")}
+        </span>
+      )}
     </div>
   );
 };

@@ -228,7 +228,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   return (
     <>
       {/* Model Status and Switcher */}
-      <div className="relative" ref={dropdownRef}>
+      <div
+        className="relative"
+        ref={dropdownRef}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && showModelDropdown) {
+            event.preventDefault();
+            setShowModelDropdown(false);
+            dropdownRef.current
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.focus();
+          }
+        }}
+      >
         <ModelStatusButton
           status={getDisplayStatus()}
           displayText={getModelDisplayText()}

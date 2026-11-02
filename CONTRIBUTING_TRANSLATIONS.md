@@ -1,5 +1,17 @@
 # Contributing Translations to Handy
 
+## Personal fork status
+
+New fork strings currently fall back to English through i18next. The exact
+permitted keys are listed in `src/i18n/english-fallback-keys.json`; existing
+translations remain untouched. Fork CI runs
+`bun run check:translations --allow-english-fallback` and still rejects missing
+keys outside that list, extra keys, and stale fallback entries. The plain
+`bun run check:translations` command remains strict and reports untranslated
+fork strings. Remove a key from the fallback list when all locales translate it.
+
+The upstream translation guide follows below.
+
 Thank you for helping translate Handy! This guide explains how to add or improve translations.
 
 ## Quick Start
