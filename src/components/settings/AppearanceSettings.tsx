@@ -1,3 +1,4 @@
+import { ThemePreview } from "./ThemePreview";
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Palette, Check } from "lucide-react";
@@ -8,8 +9,6 @@ import { SettingContainer } from "../ui/SettingContainer";
 import "./AppearanceSettings.css";
 import { Button } from "../ui/Button";
 import {
-  palettes,
-  accentColors,
   presets,
   accents,
   readAppearance,
@@ -48,48 +47,7 @@ export function AppearanceSettings() {
               onClick={() => void change({ ...value, preset })}
               className={`appearance-choice border rounded-lg p-3 text-left ${value.preset === preset ? "border-logo-primary bg-wash" : "border-line"}`}
             >
-              <span
-                className="appearance-preview"
-                aria-hidden="true"
-                style={
-                  {
-                    "--preview-light": palettes[preset][0],
-                    "--preview-dark": palettes[preset][2],
-                    "--preview-ink-light": palettes[preset][1],
-                    "--preview-ink-dark": palettes[preset][3],
-                    "--preview-accent-light":
-                      value.accent === "preset"
-                        ? palettes[preset][4]
-                        : accentColors[value.accent][0],
-                    "--preview-accent-dark":
-                      value.accent === "preset"
-                        ? palettes[preset][5]
-                        : accentColors[value.accent][1],
-                  } as React.CSSProperties
-                }
-              >
-                <span className="preview-sidebar">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="preview-content">
-                  <i className="preview-heading" />
-                  <span className="preview-row">
-                    <i />
-                    <b />
-                  </span>
-                  <span className="preview-row">
-                    <i />
-                    <b />
-                  </span>
-                </span>
-                <span className="preview-overlay">
-                  <i />
-                  <span />
-                  <b />
-                </span>
-              </span>
+              <ThemePreview preset={preset} accent={value.accent} />
               <span className="mt-3 flex items-center justify-between gap-2 text-sm font-medium">
                 {t(`appearance.presets.${preset}`)}
                 {value.preset === preset && (
